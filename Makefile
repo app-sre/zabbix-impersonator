@@ -27,5 +27,5 @@ vet:
 	go vet -v ./...
 
 lint:
-	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint 
+	GO111MODULE=off go get -u github.com/golangci/golangci-lint/cmd/golangci-lint 
 	$(GOPATH)/bin/golangci-lint run ./.../
