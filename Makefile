@@ -1,5 +1,10 @@
 NAME := zabbix-impersonator
 
+ifndef $(GOPATH)
+    GOPATH=$(shell go env GOPATH)
+    export GOPATH
+endif
+
 .PHONY: \
 	build \
 	lint \
@@ -23,4 +28,4 @@ vet:
 
 lint:
 	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint 
-	$GOPATH/bin/golangci-lint run ./.../
+	$(GOPATH)/bin/golangci-lint run ./.../
