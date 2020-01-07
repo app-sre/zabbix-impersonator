@@ -23,4 +23,4 @@ vet:
 
 lint:
 	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint 
-	golangci-lint run ./.../
+	$GOPATH/bin/golangci-lint run ./.../
