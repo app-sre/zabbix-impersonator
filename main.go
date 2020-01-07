@@ -1,9 +1,10 @@
 package main
 
 import (
-	"log"
 	"os"
+	"strings"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
 
@@ -13,6 +14,8 @@ var (
 	metricsListenAddress string
 	metricsListenPort    int64
 	metricsFile          string
+	logLevel             string
+	logFormat            string
 )
 
 func main() {
@@ -53,8 +56,46 @@ func main() {
 				EnvVars:     []string{"ZI_METRICS_FILE"},
 				Destination: &metricsFile,
 			},
+			&cli.StringFlag{
+				Name:        "log.level",
+				Value:       "info",
+				Usage:       "Only log messages with the given severity or above. One of: [debug, info, warn, error]",
+				EnvVars:     []string{"ZI_LOG_LEVEL"},
+				Destination: &logLevel,
+			},
+			&cli.StringFlag{
+				Name:        "log.format",
+				Value:       "text",
+				Usage:       "Output format of log messages. One of: [text, json]",
+				EnvVars:     []string{"ZI_LOG_FORMAT"},
+				Destination: &logFormat,
+			},
 		},
 		Action: func(c *cli.Context) error {
+			switch strings.ToLower(logLevel) {
+			case "debug":
+				log.SetLevel(log.DebugLevel)
+			case "info":
+				log.SetLevel(log.InfoLevel)
+			case "warn":
+				log.SetLevel(log.WarnLevel)
+			case "error":
+				log.SetLevel(log.ErrorLevel)
+			default:
+				log.Fatalf("invalid log level requested: %s", logLevel)
+			}
+
+			switch strings.ToLower(logFormat) {
+			case "text":
+				log.SetFormatter(&log.TextFormatter{
+					FullTimestamp: true,
+				})
+			case "json":
+				log.SetFormatter(&log.JSONFormatter{})
+			default:
+				log.Fatalf("invalid log format requested: %s", logFormat)
+			}
+
 			s := NewZServer(&ZServerConfig{
 				ServerListenAddress:  serverListenAddress,
 				ServerListenPort:     serverListenPort,
@@ -66,8 +107,7 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
 }

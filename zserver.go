@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -16,6 +15,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -141,7 +142,7 @@ func (s *ZServer) Run() error {
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 
-		log.Println("Starting metrics server on", metricsListenIPPort)
+		log.Infof("Starting metrics server on %s", metricsListenIPPort)
 		log.Fatal(http.ListenAndServe(metricsListenIPPort, nil))
 	}()
 
@@ -157,7 +158,7 @@ func (s *ZServer) Run() error {
 	// Close the listener when the application closes.
 	defer l.Close()
 
-	log.Println("Listening for zabbix sender requests on", serverListenIPPort)
+	log.Infof("Listening for zabbix sender requests on %s", serverListenIPPort)
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()
@@ -178,19 +179,19 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 
 	headerLen, err := conn.Read(respHeader)
 	if err != nil {
-		log.Printf("Error reading header: %s", err.Error())
+		log.Errorf("Error reading header: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
 
 	if headerLen != 13 {
-		log.Printf("Incorrect header len")
+		log.Errorln("Incorrect header len")
 		requestsInvalid.Inc()
 		return
 	}
 
 	if !bytes.HasPrefix(respHeader, []byte("ZBXD\x01")) {
-		log.Printf("Incorrect header prefix")
+		log.Errorln("Incorrect header prefix")
 		requestsInvalid.Inc()
 		return
 	}
@@ -200,7 +201,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	respBody := make([]byte, bodySize)
 	_, err = conn.Read(respBody)
 	if err != nil {
-		log.Printf("Error reading body: %s", err.Error())
+		log.Errorf("Error reading body: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
@@ -208,7 +209,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	var request Request
 	err = json.Unmarshal(respBody, &request)
 	if err != nil {
-		log.Printf("Error unmarshalling json: %s", err.Error())
+		log.Errorf("Error unmarshalling json: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
@@ -219,7 +220,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 
 		metric, ok := s.Metrics[trapperItem.Key()]
 		if !ok {
-			log.Printf("Skipping unknown metric: %s\n", trapperItem.FullKey)
+			log.Warnf("Skipping unknown metric: %s", trapperItem.FullKey)
 			trapperItemsSkipped.Inc()
 			continue
 		}
@@ -227,14 +228,14 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		// calculate value
 		value, err := trapperItem.ParseFloat64()
 		if err != nil {
-			log.Printf("Skipping metric: %s (%s)", trapperItem.Key(), err.Error())
+			log.Warnf("Skipping metric: %s (%s)", trapperItem.Key(), err.Error())
 			trapperItemsSkipped.Inc()
 			continue
 		}
 
 		labels := append([]string{trapperItem.Host}, trapperItem.Args()...)
 		if len(labels) != len(metric.Args)+1 {
-			log.Printf("Skipping metric: %s (invalid arg cardinality)", trapperItem.FullKey)
+			log.Warnf("Skipping metric: %s (invalid arg cardinality)", trapperItem.FullKey)
 			trapperItemsSkipped.Inc()
 			continue
 		}
@@ -243,7 +244,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		processed++
 		trapperItemsProcessed.Inc()
 
-		log.Printf("[%s] %s (%s) %s: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
+		log.Debugf("[%s] %s (%s) %s: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
 	}
 
 	conn.Write(zabbixResponse(processed, total-processed, total, 0))
@@ -278,7 +279,7 @@ func (s *ZServer) loadMetricsFile(file string) error {
 		}, append([]string{"host"}, metric.Args...))
 
 		metricsMap[metric.ZabbixKey] = metric
-		log.Printf("Initialized metric %s from zabbix key %s", metric.Metric, metric.ZabbixKey)
+		log.Infof("Initialized metric %s from zabbix key %s", metric.Metric, metric.ZabbixKey)
 	}
 
 	s.Metrics = metricsMap
