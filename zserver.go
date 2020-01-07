@@ -247,7 +247,10 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		log.Debugf("[%s] %s (%s) %s: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
 	}
 
-	conn.Write(zabbixResponse(processed, total-processed, total, 0))
+	_, err = conn.Write(zabbixResponse(processed, total-processed, total, 0))
+	if err != nil {
+		log.Errorf("could not write response: %v", err)
+	}
 	requestsProcessed.Inc()
 }
 
