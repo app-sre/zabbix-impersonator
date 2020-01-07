@@ -1,0 +1,8 @@
+[
+    {
+        "zabbix_key": "test.ping",
+        "metric": "test_ping",
+        "help": "this is a test ping",
+        "args": ["foo", "bar"]
+    }
+]

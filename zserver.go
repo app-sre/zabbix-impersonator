@@ -10,19 +10,12 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-)
-
-const (
-	connHost = "127.0.0.1"
-	connPort = "10051"
-	connType = "tcp"
 )
 
 var (
@@ -114,90 +107,70 @@ type Metric struct {
 	Gauge     *prometheus.GaugeVec `json:"-"`
 }
 
-func sanitizeKey(key string) string {
-	return "zabbix_" + strings.Replace(key, ".", "_", -1)
+// ZServer defines a zabbix server that will receive trapper requests
+type ZServer struct {
+	Config  *ZServerConfig
+	Metrics map[string]Metric
 }
 
-func initMetrics() map[string]Metric {
-	metricsData, err := ioutil.ReadFile("metrics.json")
-	if err != nil {
-		panic(err)
-	}
-
-	var metricsList []Metric
-	err = json.Unmarshal(metricsData, &metricsList)
-	if err != nil {
-		panic(err)
-	}
-
-	var metricsMap = make(map[string]Metric)
-	for _, metric := range metricsList {
-		if metric.ZabbixKey == "" {
-			panic("Unsupported empty ZabbixKey")
-		}
-
-		if metric.Metric == "" {
-			metric.Metric = sanitizeKey(metric.ZabbixKey)
-		}
-
-		metric.Gauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-			Name: metric.Metric,
-			Help: metric.Help,
-		}, append([]string{"host"}, metric.Args...))
-
-		metricsMap[metric.ZabbixKey] = metric
-	}
-
-	return metricsMap
+// ZServerConfig defines a ZServer configuration
+type ZServerConfig struct {
+	ServerListenAddress  string
+	ServerListenPort     int64
+	MetricsListenAddress string
+	MetricsListenPort    int64
+	MetricsFile          string
 }
 
-func zabbixResponse(processed, failed, total int, seconds float64) []byte {
-	responseString := fmt.Sprintf(`{"response": "success", "info": "processed: %d; failed: %d; total: %d; seconds spent: %f"}`,
-		processed, failed, total, seconds)
-
-	size := make([]byte, 8)
-	binary.LittleEndian.PutUint64(size, uint64(len(responseString)))
-
-	buf := bytes.NewBuffer([]byte("ZBXD\x01"))
-	buf.Write(size)
-	buf.WriteString(responseString)
-
-	return buf.Bytes()
+// NewZServer instantiates a new ZServer
+func NewZServer(c *ZServerConfig) *ZServer {
+	return &ZServer{Config: c}
 }
 
-var metrics = initMetrics()
+// Run starts the ZServer and listens on the server and metrics port
+func (s *ZServer) Run() error {
+	if err := s.loadMetricsFile(s.Config.MetricsFile); err != nil {
+		log.Fatalf("could not load metrics: %v", err)
+	}
 
-func main() {
 	// Start prom exporter
+	metricsListenIPPort := fmt.Sprintf("%s:%d",
+		s.Config.MetricsListenAddress,
+		s.Config.MetricsListenPort,
+	)
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":2112", nil)
+
+		log.Println("Starting metrics server on", metricsListenIPPort)
+		log.Fatal(http.ListenAndServe(metricsListenIPPort, nil))
 	}()
 
 	// Listen for incoming connections.
-	l, err := net.Listen(connType, connHost+":"+connPort)
+	serverListenIPPort := fmt.Sprintf("%s:%d",
+		s.Config.ServerListenAddress,
+		s.Config.ServerListenPort,
+	)
+	l, err := net.Listen("tcp", serverListenIPPort)
 	if err != nil {
-		fmt.Println("Error listening:", err.Error())
-		os.Exit(1)
+		log.Fatalf("could not start listening: %v", err)
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
 
-	fmt.Println("Listening on " + connHost + ":" + connPort)
+	log.Println("Listening for zabbix sender requests on", serverListenIPPort)
 	for {
 		// Listen for an incoming connection.
 		conn, err := l.Accept()
 		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
+			log.Fatalf("error accepting connection: %v", err)
 		}
 		// Handle connections in a new goroutine.
-		go handleRequest(conn)
+		go s.handleRequest(conn)
 	}
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn) {
+func (s *ZServer) handleRequest(conn net.Conn) {
 	defer conn.Close()
 
 	// read header
@@ -244,7 +217,7 @@ func handleRequest(conn net.Conn) {
 	for _, trapperItem := range request.Data {
 		total++
 
-		metric, ok := metrics[trapperItem.Key()]
+		metric, ok := s.Metrics[trapperItem.Key()]
 		if !ok {
 			log.Printf("Skipping unknown metric: %s\n", trapperItem.FullKey)
 			trapperItemsSkipped.Inc()
@@ -275,4 +248,40 @@ func handleRequest(conn net.Conn) {
 
 	conn.Write(zabbixResponse(processed, total-processed, total, 0))
 	requestsProcessed.Inc()
+}
+
+func (s *ZServer) loadMetricsFile(file string) error {
+	metricsData, err := ioutil.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("could not read file: %v", err)
+	}
+
+	var metricsList []Metric
+	err = json.Unmarshal(metricsData, &metricsList)
+	if err != nil {
+		return fmt.Errorf("could not parse json: %v", err)
+	}
+
+	var metricsMap = make(map[string]Metric)
+	for _, metric := range metricsList {
+		if metric.ZabbixKey == "" {
+			return fmt.Errorf("found empty ZabbixKey")
+		}
+
+		if metric.Metric == "" {
+			metric.Metric = sanitizeKey(metric.ZabbixKey)
+		}
+
+		metric.Gauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: metric.Metric,
+			Help: metric.Help,
+		}, append([]string{"host"}, metric.Args...))
+
+		metricsMap[metric.ZabbixKey] = metric
+		log.Printf("Initialized metric %s from zabbix key %s", metric.Metric, metric.ZabbixKey)
+	}
+
+	s.Metrics = metricsMap
+
+	return nil
 }
