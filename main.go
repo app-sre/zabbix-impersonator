@@ -14,6 +14,7 @@ var (
 	metricsListenAddress string
 	metricsListenPort    int64
 	metricsFile          string
+	metricsNamespace     string
 	logLevel             string
 	logFormat            string
 )
@@ -55,6 +56,13 @@ func main() {
 				Usage:       "metrics definition file",
 				EnvVars:     []string{"ZI_METRICS_FILE"},
 				Destination: &metricsFile,
+			},
+			&cli.StringFlag{
+				Name:        "metrics.namespace",
+				Value:       "zabbix_impersonator",
+				Usage:       "namespace to expose the metrics under",
+				EnvVars:     []string{"ZI_METRICS_NAMESPACE"},
+				Destination: &metricsNamespace,
 			},
 			&cli.StringFlag{
 				Name:        "log.level",
@@ -102,6 +110,7 @@ func main() {
 				MetricsListenAddress: metricsListenAddress,
 				MetricsListenPort:    metricsListenPort,
 				MetricsFile:          metricsFile,
+				MetricsNamespace:     metricsNamespace,
 			})
 			return s.Run()
 		},

@@ -3,6 +3,7 @@
         "zabbix_key": "test.ping",
         "metric": "test_ping",
         "help": "this is a test ping",
-        "args": ["foo", "bar"]
+        "args": ["foo", "bar"],
+        "kind": "counter"
     }
 ]
