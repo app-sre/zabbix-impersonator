@@ -75,10 +75,8 @@ func (t TrapperItem) ParseFloat64() (float64, error) {
 
 	switch v := t.Value.(type) {
 	case string:
-		fmt.Println("STRING")
 		value, err = strconv.ParseFloat(v, 64)
 		if err != nil {
-			fmt.Println("ERRSTRING")
 			return value, fmt.Errorf("cannot parse %s", v)
 		}
 	case int:
@@ -101,11 +99,13 @@ type Request struct {
 
 // Metric TODO
 type Metric struct {
-	ZabbixKey string               `json:"zabbix_key"`
-	Metric    string               `json:"metric"`
-	Help      string               `json:"help"`
-	Args      []string             `json:"args"`
-	Gauge     *prometheus.GaugeVec `json:"-"`
+	ZabbixKey string                 `json:"zabbix_key"`
+	Metric    string                 `json:"metric"`
+	Help      string                 `json:"help"`
+	Args      []string               `json:"args"`
+	Kind      string                 `json:"kind"`
+	Gauge     *prometheus.GaugeVec   `json:"-"`
+	Counter   *prometheus.CounterVec `json:"-"`
 }
 
 // ZServer defines a zabbix server that will receive trapper requests
@@ -121,6 +121,7 @@ type ZServerConfig struct {
 	MetricsListenAddress string
 	MetricsListenPort    int64
 	MetricsFile          string
+	MetricsNamespace     string
 }
 
 // NewZServer instantiates a new ZServer
@@ -240,11 +241,22 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 			continue
 		}
 
-		metric.Gauge.WithLabelValues(labels...).Set(value)
+		switch strings.ToLower(metric.Kind) {
+		case "gauge":
+			metric.Gauge.WithLabelValues(labels...).Set(value)
+		case "counter":
+			if value < 0 {
+				log.Warnf("Skipping metric: %s, received negative value for counter", metric.Metric)
+				trapperItemsSkipped.Inc()
+				continue
+			}
+			metric.Counter.WithLabelValues(labels...).Add(value)
+		}
+
 		processed++
 		trapperItemsProcessed.Inc()
 
-		log.Debugf("[%s] %s (%s) %s: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
+		log.Debugf("Processed trapper request: Host: %s, Metric: %s, ZabbixKey: %s, Args: %s, Value: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
 	}
 
 	_, err = conn.Write(zabbixResponse(processed, total-processed, total, 0))
@@ -276,10 +288,23 @@ func (s *ZServer) loadMetricsFile(file string) error {
 			metric.Metric = sanitizeKey(metric.ZabbixKey)
 		}
 
-		metric.Gauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
-			Name: metric.Metric,
-			Help: metric.Help,
-		}, append([]string{"host"}, metric.Args...))
+		metricName := s.Config.MetricsNamespace + "_" + metric.Metric
+		switch strings.ToLower(metric.Kind) {
+		case "gauge":
+			metric.Gauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+				Name: metricName,
+				Help: metric.Help,
+			}, append([]string{"host"}, metric.Args...))
+		case "counter":
+			metric.Counter = promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: metricName,
+				Help: metric.Help,
+			}, append([]string{"host"}, metric.Args...))
+		case "":
+			return fmt.Errorf("missing metric kind in config for metric %s", metric.Metric)
+		default:
+			return fmt.Errorf("invalid metric kind: %v", metric.Kind)
+		}
 
 		metricsMap[metric.ZabbixKey] = metric
 		log.Infof("Initialized metric %s from zabbix key %s", metric.Metric, metric.ZabbixKey)

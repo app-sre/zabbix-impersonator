@@ -8,7 +8,7 @@ import (
 )
 
 func sanitizeKey(key string) string {
-	return "zabbix_" + strings.Replace(key, ".", "_", -1)
+	return strings.Replace(key, ".", "_", -1)
 }
 
 func zabbixResponse(processed, failed, total int, seconds float64) []byte {
