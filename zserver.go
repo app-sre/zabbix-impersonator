@@ -294,12 +294,12 @@ func (s *ZServer) loadMetricsFile(file string) error {
 			metric.Gauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 				Name: metricName,
 				Help: metric.Help,
-			}, append([]string{"host"}, metric.Args...))
+			}, append([]string{"zabbix_sender_hostname"}, metric.Args...))
 		case "counter":
 			metric.Counter = promauto.NewCounterVec(prometheus.CounterOpts{
 				Name: metricName,
 				Help: metric.Help,
-			}, append([]string{"host"}, metric.Args...))
+			}, append([]string{"zabbix_sender_hostname"}, metric.Args...))
 		case "":
 			return fmt.Errorf("missing metric kind in config for metric %s", metric.Metric)
 		default:
