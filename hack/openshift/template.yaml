@@ -49,10 +49,10 @@ objects:
           volumeMounts:
           - name: zabbix-impersonator
             mountPath: /etc/zabbix-impersonator
-      volumes:
-      - name: zabbix-impersonator
-        configMap:
-          name: zabbix-impersonator
+        volumes:
+        - name: zabbix-impersonator
+          configMap:
+            name: zabbix-impersonator
 - apiVersion: v1
   kind: Service
   metadata:
