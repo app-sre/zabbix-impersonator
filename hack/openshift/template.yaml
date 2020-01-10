@@ -34,10 +34,10 @@ objects:
           - --log.format=json
           ports:
           - containerPort: 2112
-            name: prometheus-exporter
+            name: exporter
             protocol: TCP
           - containerPort: 10051
-            name: zabbix-trapper
+            name: trapper
             protocol: TCP
           resources:
             limits:
@@ -63,11 +63,11 @@ objects:
     selector:
       app: zabbix-impersonator
     ports:
-    - name: prometheus-exporter
+    - name: exporter
       protocol: TCP
       port: 2112
       targetPort: 2112
-    - name: zabbix-trapper
+    - name: trapper
       protocol: TCP
       port: 10051
       targetPort: 10051
