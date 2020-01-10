@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: zabbix-impersonator
+objects:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: zabbix-impersonator
+    name: zabbix-impersonator
+  spec:
+    replicas: ${{REPLICAS}}
+    selector:
+      matchLabels:
+        app: zabbix-impersonator
+    template:
+      metadata:
+        labels:
+          app: zabbix-impersonator
+      spec:
+        containers:
+        - name: zabbix-impersonator
+          image: ${IMAGE}:${IMAGE_TAG}
+          command: 
+          - /bin/zabbix-impersonator
+          args:
+          - --server.listen-address=0.0.0.0
+          - --server.listen-port=10051
+          - --metrics.listen-address=0.0.0.0
+          - --metrics.listen-port=2112
+          - --metrics.file=/etc/zabbix-impersonator/metrics.json
+          - --metrics.namespace=zabbix_impersonator
+          - --log.format=json
+          ports:
+          - containerPort: 2112
+            name: prometheus-exporter
+            protocol: TCP
+          - containerPort: 10051
+            name: zabbix-trapper
+            protocol: TCP
+          resources:
+            limits:
+              cpu: 100m
+              memory: 150Mi
+            requests:
+              cpu: 10m
+              memory: 50Mi
+          volumeMounts:
+          - name: zabbix-impersonator
+            mountPath: /etc/zabbix-impersonator
+      volumes:
+      - name: zabbix-impersonator
+        configMap:
+          name: zabbix-impersonator
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: zabbix-impersonator
+    name: zabbix-impersonator
+  spec:
+    selector:
+      app: zabbix-impersonator
+    ports:
+    - name: prometheus-exporter
+      protocol: TCP
+      port: 2112
+      targetPort: 2112
+    - name: zabbix-trapper
+      protocol: TCP
+      port: 10051
+      targetPort: 10051
+    type: ClusterIP
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: zabbix-impersonator
+  data:
+    metrics.json: |-
+      [
+          {
+              "zabbix_key": "test.ping",
+              "metric": "test_ping",
+              "help": "this is a test ping",
+              "args": ["aaa", "bbb"],
+              "kind": "counter"
+          }
+      ]
+parameters:
+- name: IMAGE
+  value: quay.io/app-sre/zabbix-impersonator
+- name: IMAGE_TAG
+  value: latest
+- name: REPLICAS
+  value: "1"
