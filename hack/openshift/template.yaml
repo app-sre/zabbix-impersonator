@@ -27,6 +27,7 @@ objects:
           args:
           - --server.listen-address=0.0.0.0
           - --server.listen-port=10051
+          - --server.ip-whitelist="${ZI_SERVER_IP_WHITELIST}"
           - --metrics.listen-address=0.0.0.0
           - --metrics.listen-port=2112
           - --metrics.file=/etc/zabbix-impersonator/metrics.json
@@ -105,3 +106,5 @@ parameters:
   value: latest
 - name: REPLICAS
   value: "1"
+- name: ZI_SERVER_IP_WHITELIST
+  value: "0.0.0.0/0"
