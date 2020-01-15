@@ -192,7 +192,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	defer conn.Close()
 
 	// Check if IP is whitelisted
-	ip := strings.Split(conn.RemoteAddr().String(), ":")[0]
+	ip := conn.RemoteAddr().(*net.TCPAddr).IP.String()
 	if !s.checkIPAllowed(ip) {
 		log.WithFields(log.Fields{
 			"remote_ip": ip,
