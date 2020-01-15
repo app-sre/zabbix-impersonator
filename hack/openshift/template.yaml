@@ -58,7 +58,7 @@ objects:
   metadata:
     labels:
       app: zabbix-impersonator
-    name: zabbix-impersonator
+    name: zabbix-impersonator-exporter
   spec:
     selector:
       app: zabbix-impersonator
@@ -67,11 +67,22 @@ objects:
       protocol: TCP
       port: 2112
       targetPort: 2112
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: zabbix-impersonator
+    name: zabbix-impersonator-trapper
+  spec:
+    selector:
+      app: zabbix-impersonator
+    ports:
     - name: trapper
       protocol: TCP
       port: 10051
       targetPort: 10051
-    type: ClusterIP
+    type: LoadBalancer
 - apiVersion: v1
   kind: ConfigMap
   metadata:
