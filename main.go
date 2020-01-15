@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net"
 	"os"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 var (
 	serverListenAddress  string
 	serverListenPort     int64
+	serverIPWhitelist    []string
 	metricsListenAddress string
 	metricsListenPort    int64
 	metricsFile          string
@@ -35,6 +37,13 @@ func main() {
 				Usage:       "port for server to listen on",
 				EnvVars:     []string{"ZI_SERVER_LISTEN_PORT"},
 				Destination: &serverListenPort,
+			},
+			&cli.StringSliceFlag{
+				Name:        "server.ip-whitelist",
+				Value:       cli.NewStringSlice("0.0.0.0/0"),
+				Usage:       "IPs that are allowed access",
+				EnvVars:     []string{"ZI_SERVER_IP_WHITELIST"},
+				DefaultText: "0.0.0.0/0",
 			},
 			&cli.StringFlag{
 				Name:        "metrics.listen-address",
@@ -79,6 +88,13 @@ func main() {
 				Destination: &logFormat,
 			},
 		},
+		Before: func(c *cli.Context) error {
+			// StringSliceFlag doesn't support Destination https://github.com/urfave/cli/issues/603
+			if len(c.StringSlice("server.ip-whitelist")) > 0 {
+				serverIPWhitelist = c.StringSlice("server.ip-whitelist")
+			}
+			return nil
+		},
 		Action: func(c *cli.Context) error {
 			switch strings.ToLower(logLevel) {
 			case "debug":
@@ -104,9 +120,33 @@ func main() {
 				log.Fatalf("invalid log format requested: %s", logFormat)
 			}
 
+			var cidrWhitelist []*net.IPNet
+			var ipWhitelist []*net.IP
+			for _, iparg := range serverIPWhitelist {
+				ips := strings.Split(iparg, ",")
+				for _, ip := range ips {
+					if strings.Contains(ip, "/") {
+						_, ipnet, err := net.ParseCIDR(ip)
+						if err != nil {
+							log.Fatalf("could not parse CIDR: %v", err)
+						}
+						cidrWhitelist = append(cidrWhitelist, ipnet)
+					} else {
+						if parsedIP := net.ParseIP(ip); parsedIP != nil {
+							ipWhitelist = append(ipWhitelist, &parsedIP)
+						} else {
+							log.Fatalf("could not parse IP: %s", ip)
+						}
+					}
+
+				}
+			}
+
 			s := NewZServer(&ZServerConfig{
 				ServerListenAddress:  serverListenAddress,
 				ServerListenPort:     serverListenPort,
+				ServerIPWhitelist:    ipWhitelist,
+				ServerCIDRWhitelist:  cidrWhitelist,
 				MetricsListenAddress: metricsListenAddress,
 				MetricsListenPort:    metricsListenPort,
 				MetricsFile:          metricsFile,

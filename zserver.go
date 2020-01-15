@@ -118,6 +118,8 @@ type ZServer struct {
 type ZServerConfig struct {
 	ServerListenAddress  string
 	ServerListenPort     int64
+	ServerIPWhitelist    []*net.IP
+	ServerCIDRWhitelist  []*net.IPNet
 	MetricsListenAddress string
 	MetricsListenPort    int64
 	MetricsFile          string
@@ -171,9 +173,30 @@ func (s *ZServer) Run() error {
 	}
 }
 
+func (s *ZServer) checkIPAllowed(ip string) bool {
+	for _, i := range s.Config.ServerIPWhitelist {
+		if i.String() == ip {
+			return true
+		}
+	}
+	for _, c := range s.Config.ServerCIDRWhitelist {
+		if c.Contains(net.ParseIP(ip)) {
+			return true
+		}
+	}
+	return false
+}
+
 // Handles incoming requests.
 func (s *ZServer) handleRequest(conn net.Conn) {
 	defer conn.Close()
+
+	// Check if IP is whitelisted
+	ip := strings.Split(conn.RemoteAddr().String(), ":")[0]
+	if !s.checkIPAllowed(ip) {
+		log.Warnf("connection from IP %s has been blocked", ip)
+		return
+	}
 
 	// read header
 	respHeader := make([]byte, 13)
