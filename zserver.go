@@ -194,7 +194,9 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	// Check if IP is whitelisted
 	ip := strings.Split(conn.RemoteAddr().String(), ":")[0]
 	if !s.checkIPAllowed(ip) {
-		log.Warnf("connection from IP %s has been blocked", ip)
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Warnf("connection from IP %s has been blocked", ip)
 		return
 	}
 
@@ -203,19 +205,25 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 
 	headerLen, err := conn.Read(respHeader)
 	if err != nil {
-		log.Errorf("Error reading header: %s", err.Error())
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorf("Error reading header: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
 
 	if headerLen != 13 {
-		log.Errorln("Incorrect header len")
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorln("Incorrect header len")
 		requestsInvalid.Inc()
 		return
 	}
 
 	if !bytes.HasPrefix(respHeader, []byte("ZBXD\x01")) {
-		log.Errorln("Incorrect header prefix")
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorln("Incorrect header prefix")
 		requestsInvalid.Inc()
 		return
 	}
@@ -225,7 +233,9 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	respBody := make([]byte, bodySize)
 	_, err = conn.Read(respBody)
 	if err != nil {
-		log.Errorf("Error reading body: %s", err.Error())
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorf("Error reading body: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
@@ -233,7 +243,9 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	var request Request
 	err = json.Unmarshal(respBody, &request)
 	if err != nil {
-		log.Errorf("Error unmarshalling json: %s", err.Error())
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorf("Error unmarshalling json: %s", err.Error())
 		requestsInvalid.Inc()
 		return
 	}
@@ -244,7 +256,9 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 
 		metric, ok := s.Metrics[trapperItem.Key()]
 		if !ok {
-			log.Warnf("Skipping unknown metric: %s", trapperItem.FullKey)
+			log.WithFields(log.Fields{
+				"remote_ip": ip,
+			}).Warnf("Skipping unknown metric: %s", trapperItem.FullKey)
 			trapperItemsSkipped.Inc()
 			continue
 		}
@@ -252,14 +266,18 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		// calculate value
 		value, err := trapperItem.ParseFloat64()
 		if err != nil {
-			log.Warnf("Skipping metric: %s (%s)", trapperItem.Key(), err.Error())
+			log.WithFields(log.Fields{
+				"remote_ip": ip,
+			}).Warnf("Skipping metric: %s (%s)", trapperItem.Key(), err.Error())
 			trapperItemsSkipped.Inc()
 			continue
 		}
 
 		labels := append([]string{trapperItem.Host}, trapperItem.Args()...)
 		if len(labels) != len(metric.Args)+1 {
-			log.Warnf("Skipping metric: %s (invalid arg cardinality)", trapperItem.FullKey)
+			log.WithFields(log.Fields{
+				"remote_ip": ip,
+			}).Warnf("Skipping metric: %s (invalid arg cardinality)", trapperItem.FullKey)
 			trapperItemsSkipped.Inc()
 			continue
 		}
@@ -269,7 +287,9 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 			metric.Gauge.WithLabelValues(labels...).Set(value)
 		case "counter":
 			if value < 0 {
-				log.Warnf("Skipping metric: %s, received negative value for counter", metric.Metric)
+				log.WithFields(log.Fields{
+					"remote_ip": ip,
+				}).Warnf("Skipping metric: %s, received negative value for counter", metric.Metric)
 				trapperItemsSkipped.Inc()
 				continue
 			}
@@ -279,12 +299,16 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		processed++
 		trapperItemsProcessed.Inc()
 
-		log.Debugf("Processed trapper request: Host: %s, Metric: %s, ZabbixKey: %s, Args: %s, Value: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Debugf("Processed trapper request: Host: %s, Metric: %s, ZabbixKey: %s, Args: %s, Value: %f\n", trapperItem.Host, metric.Metric, metric.ZabbixKey, trapperItem.Args(), value)
 	}
 
 	_, err = conn.Write(zabbixResponse(processed, total-processed, total, 0))
 	if err != nil {
-		log.Errorf("could not write response: %v", err)
+		log.WithFields(log.Fields{
+			"remote_ip": ip,
+		}).Errorf("could not write response: %v", err)
 	}
 	requestsProcessed.Inc()
 }
