@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -228,10 +227,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 		return
 	}
 
-	bodySize := binary.LittleEndian.Uint64(respHeader[5:])
-
-	respBody := make([]byte, bodySize)
-	_, err = conn.Read(respBody)
+	body, err := ioutil.ReadAll(conn)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"remote_ip": ip,
@@ -241,7 +237,7 @@ func (s *ZServer) handleRequest(conn net.Conn) {
 	}
 
 	var request Request
-	err = json.Unmarshal(respBody, &request)
+	err = json.Unmarshal(body, &request)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"remote_ip": ip,
